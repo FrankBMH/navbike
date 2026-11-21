@@ -1,0 +1,78 @@
+name: iOS 未签名安装包
+
+# 只在网页上手动点「Run workflow」时运行（避免每次推代码都消耗 macOS 分钟）
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      CI: "1" # 让 expo prebuild 不再交互式提问
+      EXPO_NO_TELEMETRY: "1"
+      # 直接注入进程环境，保证 Xcode 打包 JS 时也能读到（.env 只是保险）
+      EXPO_PUBLIC_AMAP_KEY: ${{ secrets.AMAP_KEY }}
+
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 检查仓库 Secret
+        run: |
+          if [ -z "${{ secrets.AMAP_KEY }}" ]; then
+            echo "::error::缺少 AMAP_KEY Secret。请到 Settings → Secrets and variables → Actions 添加。"
+            exit 1
+          fi
+
+      - name: 写入高德 Key
+        run: echo "EXPO_PUBLIC_AMAP_KEY=${{ secrets.AMAP_KEY }}" > .env
+
+      - name: 打印 Xcode 版本（构建失败时先看这里）
+        run: xcodebuild -version
+
+      - name: 安装 JS 依赖
+        run: npm ci
+
+      - name: 生成 iOS 原生工程
+        run: npx expo prebuild -p ios --clean --no-install
+
+      - name: 安装 Pods
+        working-directory: ios
+        run: pod install --repo-update
+
+      - name: 编译（不签名）
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -workspace navbike.xcworkspace \
+            -scheme navbike \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            -archivePath build/navbike.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: 打包成 ipa
+        run: |
+          mkdir -p out/Payload
+          cp -R ios/build/navbike.xcarchive/Products/Applications/*.app out/Payload/
+          cd out
+          zip -qry navbike-unsigned.ipa Payload
+          ls -lh navbike-unsigned.ipa
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: navbike-ipa
+          path: out/navbike-unsigned.ipa
+          retention-days: 7
