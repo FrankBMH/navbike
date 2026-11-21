@@ -11,7 +11,8 @@ import {
   Saved, Fav,
 } from './src/store';
 
-import { AMAP_KEY as KEY, HAS_KEY } from './src/config';
+import { getKey, loadKey, maskKey } from './src/config';
+import KeyGate from './src/KeyGate';
 
 const RETRY = 3;
 const RETRY_WAIT = 1200;
@@ -100,15 +101,14 @@ export default function App() {
 
   const [navOn, setNavOn] = useState(false);
 
+  // 密钥：loading 时不渲染界面（避免闪一下配置页），need 时全屏要求填写
+  const [keyState, setKeyState] = useState<'loading' | 'need' | 'ok'>('loading');
+  const [editKey, setEditKey] = useState(false);
+
   useEffect(() => {
     loadHistory().then(setHistory);
     loadFavs().then(setFavs);
-    if (!HAS_KEY) {
-      Alert.alert(
-        '还没有配置高德 Key',
-        '在项目根目录新建一个 .env 文件，写入：\n\nEXPO_PUBLIC_AMAP_KEY=你的Key\n\n保存后重启 Expo 即可。申请地址见 README。',
-      );
-    }
+    loadKey().then(k => setKeyState(k ? 'ok' : 'need'));
   }, []);
 
   useEffect(() => {
@@ -131,7 +131,7 @@ export default function App() {
   }
 
   async function geocode(addr: string) {
-    const u = `https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(addr)}&key=${KEY}`;
+    const u = `https://restapi.amap.com/v3/geocode/geo?address=${encodeURIComponent(addr)}&key=${getKey()}`;
     const j = await amapGet(u);
     if (String(j.status) !== '1' || !j.geocodes?.length) {
       throw new Error(`定位不到「${addr}」，试试加上城市或区名，如「杭州 西湖」`);
@@ -141,7 +141,7 @@ export default function App() {
 
   async function regeo(loc: string) {
     try {
-      const u = `https://restapi.amap.com/v3/geocode/regeo?location=${loc}&key=${KEY}`;
+      const u = `https://restapi.amap.com/v3/geocode/regeo?location=${loc}&key=${getKey()}`;
       const j = await amapGet(u);
       return j?.regeocode?.formatted_address ?? '';
     } catch {
@@ -150,7 +150,7 @@ export default function App() {
   }
 
   async function legRoute(o: string, d: string) {
-    const url = `https://restapi.amap.com/v5/direction/electrobike?origin=${o}&destination=${d}&show_fields=cost,navi,polyline&key=${KEY}`;
+    const url = `https://restapi.amap.com/v5/direction/electrobike?origin=${o}&destination=${d}&show_fields=cost,navi,polyline&key=${getKey()}`;
     const json = await amapGet(url);
     if (String(json.status) !== '1') throw new Error(`${json.info} (${json.infocode})`);
 
@@ -351,6 +351,29 @@ export default function App() {
     setFlash('已移除常用');
   }
 
+  // ---- 密钥门禁：没有 Key 就全屏拦住，不让进主界面 ----
+  if (keyState === 'loading') {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="dark" />
+      </View>
+    );
+  }
+  if (keyState === 'need' || editKey) {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="dark" />
+        <KeyGate
+          onDone={() => {
+            setEditKey(false);
+            setKeyState('ok');
+          }}
+          onCancel={editKey ? () => setEditKey(false) : undefined}
+        />
+      </View>
+    );
+  }
+
   // ---- 导航模式：整屏交给 Nav 组件 ----
   if (navOn && a) {
     const destPt = a.marks[a.marks.length - 1];
@@ -422,7 +445,7 @@ export default function App() {
         onChangeText={t => { setFromText(t); setFromPt(''); }}
         onPick={p => { setFromText(p.name); setFromPt(p.location); }}
         placeholder="起点"
-        apiKey={KEY}
+        apiKey={getKey()}
       />
 
       <AddrInput
@@ -430,7 +453,7 @@ export default function App() {
         onChangeText={t => { setToText(t); setToPt(''); }}
         onPick={p => { setToText(p.name); setToPt(p.location); }}
         placeholder="终点"
-        apiKey={KEY}
+        apiKey={getKey()}
       />
 
       <AddrInput
@@ -438,7 +461,7 @@ export default function App() {
         onChangeText={setViaText}
         onPick={p => { setViaPts([...viaPts, { name: p.name, location: p.location }]); setViaText(''); }}
         placeholder="加中间点（对比时必填）"
-        apiKey={KEY}
+        apiKey={getKey()}
       />
 
       {viaPts.length > 0 && (
@@ -475,6 +498,13 @@ export default function App() {
         </Pressable>
         <Pressable onPress={() => { setShowHistory(v => !v); setPinTarget(null); }}>
           <Text style={styles.link}>{showHistory ? '收起历史' : `历史 ${history.length}`}</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.keyRow}>
+        <Text style={styles.keyHint}>高德 Key {maskKey(getKey())}</Text>
+        <Pressable onPress={() => setEditKey(true)} hitSlop={10}>
+          <Text style={styles.link}>修改</Text>
         </Pressable>
       </View>
 
@@ -604,6 +634,8 @@ const styles = StyleSheet.create({
   btnNav: { backgroundColor: '#0F6E56', paddingVertical: 13, borderRadius: 10, alignItems: 'center', marginTop: 12 },
   btnNavText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   link: { fontSize: 13, color: '#185FA5' },
+  keyRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8 },
+  keyHint: { fontSize: 11, color: '#a8a8a0', marginRight: 10 },
   wPanel: { marginTop: 8, padding: 10, backgroundColor: '#FAF9F6', borderRadius: 10, borderWidth: 1, borderColor: '#F0EBE0' },
   wRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   wLabel: { width: 34, fontSize: 13, color: '#555' },

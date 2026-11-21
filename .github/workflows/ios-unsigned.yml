@@ -11,8 +11,9 @@ jobs:
     env:
       CI: "1" # 让 expo prebuild 不再交互式提问
       EXPO_NO_TELEMETRY: "1"
-      # 直接注入进程环境，保证 Xcode 打包 JS 时也能读到（.env 只是保险）
-      EXPO_PUBLIC_AMAP_KEY: ${{ secrets.AMAP_KEY }}
+      # 注意：这里刻意不注入任何高德 Key。
+      # Key 由使用者在 App 首次启动时自己填，存在手机本地，
+      # 这样打出来的 ipa 里没有密钥，公开分享也不会泄露。
 
     steps:
       - name: 取出代码
@@ -23,16 +24,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - name: 检查仓库 Secret
-        run: |
-          if [ -z "${{ secrets.AMAP_KEY }}" ]; then
-            echo "::error::缺少 AMAP_KEY Secret。请到 Settings → Secrets and variables → Actions 添加。"
-            exit 1
-          fi
-
-      - name: 写入高德 Key
-        run: echo "EXPO_PUBLIC_AMAP_KEY=${{ secrets.AMAP_KEY }}" > .env
 
       - name: 打印 Xcode 版本（构建失败时先看这里）
         run: xcodebuild -version

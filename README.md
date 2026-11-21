@@ -70,7 +70,8 @@ iOS + Expo + React Native，纯客户端，不需要服务器。
 ```
 App.tsx              主界面：输入、算路、评分卡片、历史、权重面板
 src/
-  config.ts          读取 EXPO_PUBLIC_AMAP_KEY
+  config.ts          高德 Key 的本地存取与联网校验（不内置任何 Key）
+  KeyGate.tsx        首次启动 / 修改 Key 的配置页
   AddrInput.tsx      带联想候选的地址输入框（500ms 防抖）
   score.ts           评分模型：analyze / roadKind / normalize / grade
   guide.ts           把 steps 摊平成连续路线，做定位吸附与剩余里程计算
@@ -82,23 +83,9 @@ src/
 
 **1. 申请高德 Key**
 
-去 [高德开放平台控制台](https://console.amap.com/dev/key/app) 创建应用，添加 Key 时**服务平台选「Web服务」**（不是 iOS/Android 平台）。个人开发者免费额度足够日常使用。
+去 [高德开放平台控制台](https://console.amap.com/dev/key/app) 创建应用，添加 Key 时**服务平台选「Web服务」**（不是 iOS / Android / Web端(JS API)）。个人开发者免费额度足够日常使用。
 
-**2. 配置 Key**
-
-```bash
-cp .env.example .env
-```
-
-然后编辑 `.env`，填入你的 Key：
-
-```
-EXPO_PUBLIC_AMAP_KEY=你的Key
-```
-
-`.env` 已被 `.gitignore` 忽略，不会被提交。Expo 会在打包时把 `EXPO_PUBLIC_` 开头的变量内联进 JS 包。
-
-**3. 安装依赖并启动**
+**2. 安装依赖并启动**
 
 ```bash
 npm install
@@ -106,6 +93,12 @@ npx expo start --go
 ```
 
 手机装 Expo Go，扫码即可运行。装了原生模块（location / speech / maps）需要用 `--go` 走 Expo Go 内置版本，不需要自己编译。
+
+**3. 首次启动时填 Key**
+
+App 打开后会先要求填 Key，粘贴后点「验证并保存」——它会拿一个固定地址真请求一次高德接口，Key 不对、平台选错、额度用完都会当场告诉你原因。
+
+Key 存在手机本地（AsyncStorage），**不会进入代码，也不会进入安装包**。想换 Key 在主界面的「高德 Key … 修改」那里改即可，不用重新打包。
 
 ## 打包成独立 App（不付 $99）
 
@@ -118,7 +111,7 @@ Apple 开发者账号 $99/年，个人自用没必要。可行路径是**自己�
 
 代价：免费签名 **7 天过期**，到期要插线重签一次（数据不会丢）。同时最多 3 个自签 App。
 
-> 用 GitHub Actions 打包需要在仓库 Settings → Secrets and variables → Actions 里加一个 `AMAP_KEY`，值是你的高德 Key。工作流会在编译前把它注入环境，公开仓库的日志里不会出现明文。
+> 工作流**不需要任何 Secret**，因为打的包本身不含 Key——Key 是使用者在自己手机上填的。所以这个 ipa 可以直接分享给别人，不会泄露你的配额。
 
 ## 已知限制
 
