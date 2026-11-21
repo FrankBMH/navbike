@@ -30,10 +30,6 @@ export function getKey(): string {
   return cached;
 }
 
-export function hasKey(): boolean {
-  return cached.length > 0;
-}
-
 /** 保存 / 清除 Key（传空字符串即清除） */
 export async function saveKey(k: string): Promise<void> {
   cached = k.trim();
@@ -70,11 +66,16 @@ export async function verifyKey(k: string): Promise<string | null> {
   if (!key) return 'Key 不能为空';
 
   let j: any = null;
+  // 一定要有超时：否则网络卡住时按钮会一直转圈，用户不知道发生了什么
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
   try {
-    const r = await fetch(CHECK_URL + encodeURIComponent(key));
+    const r = await fetch(CHECK_URL + encodeURIComponent(key), { signal: ctl.signal });
     j = await r.json();
   } catch {
-    return '网络不通，无法验证。连上网再试一次';
+    return '网络超时或连不上（8 秒无响应）。检查网络后再试';
+  } finally {
+    clearTimeout(timer);
   }
 
   if (String(j?.status) === '1') return null;
